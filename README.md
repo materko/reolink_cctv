@@ -10,218 +10,262 @@
   <img src="https://img.shields.io/github/v/release/materko/reolink_cctv?display_name=tag&include_prereleases&sort=semver" alt="Current version">
 </p>
 
-The `reolink_cctv` implementation allows you to integrate your [Reolink](https://www.reolink.com/) devices (NVR/cameras) in Home Assistant.
+`reolink_cctv` integrates [Reolink](https://www.reolink.com/) NVRs and cameras into Home Assistant. Connecting to an **NVR** gives you a single integration entry with all of its channels as sub-devices, live streams, motion/AI detection sensors, configuration switches, and browsable access to the NVR's recordings.
+
+---
 
 ## Why this fork exists: NVR firmware 2.x
 
-The official Home Assistant `reolink` integration requires reasonably recent device firmware — its documentation simply says to update the device first. For NVRs that never received a newer firmware (verified here on an **RLN8-410-E running 2.0.0.269**, for which Reolink has released nothing newer) that is not an option, and the official integration cannot list or play the NVR's recordings at all.
+Home Assistant ships an official `reolink` integration, and on current firmware it is the better choice — it is maintained by Reolink themselves and supports far more devices and features than this project.
 
-This fork supports those devices. The firmware-2.x specifics it works around, all verified against a real device:
+This fork exists for devices the official integration cannot serve: NVRs whose firmware is too old and for which **no newer firmware was ever released**. Its documentation simply says to update the device first, which is not an option when there is nothing to update to. Verified here on an **RLN8-410-E running 2.0.0.269**, where the official integration can neither list nor play the NVR's recordings.
+
+The firmware-2.x behaviours this fork works around, all verified against a real device:
 
 - **`Search` fails across a month boundary.** Any VOD search whose start and end fall into different calendar months is answered with `rspCode -12` ("get config failed"), so searches are split per month and the results merged. The official stack trips over exactly this: to save requests it deliberately queries a range spanning two months.
 - **`GetDevInfo` has no `exactType` field**, only `type`, so NVR detection has to accept both. (Upstream `reolink_aio` handles this too.)
 - **Recordings play only over raw RTMP.** The `/flv?...playback.bcs` wrapper returns 404 and the `Playback` CGI command answers "not support"; the device's own web UI uses `rtmp://<host>:1935/bcs/playback.bcs?channel=..&type=..&start=<YYYYMMDDHHMMSS>&seek=0&token=..`, where `start` comes from the `PlaybackTime` field of the `Search` result.
 - **RTMP accepts token authentication only.** User/password RTMP URLs fail with an I/O error, for live streams as well as for playback.
+- **ONVIF motion notifications carry no channel number.** The NVR reports "something moved" without saying which camera, so on such a notification the integration queries the motion state of *all* channels and reports whichever ones are active. This is what makes multi-channel motion detection work here.
 
-Because the upstream `reolink-ip` package is abandoned (its repository is gone and it declared dependencies that no longer install), the library is bundled inside this integration under `custom_components/reolink_cctv/reolink_ip/` and patched there.
+Because the upstream `reolink-ip` package is abandoned (its repository is gone and it declared dependencies that no longer install), the library is bundled inside this integration under `custom_components/reolink_cctv/reolink_ip/` and patched there. The integration therefore installs **no pip requirements** at all.
 
-## Most important changes/improvements
+---
 
-Improvements in comparison to the `reolink_dev`:
-- Implemented Reolink NVRs support. If you've connected to NVR - you'll have just **one** integration entry for that NVR instead of one for each camera. In this case all cameras/sensors/switches are childs of one NVR entry, no mess between NVR-name/camera-names anymore. I think it should work for multichannel-cameras too, but I did not test it.
-- Fixed the reason of random command-requests failures, which in `reolink_dev` lead to random warnings/errors in the log from time to time.
-- Fixed all the component's mess with its Actions/Triggers/Conditions/Services.
-- Fixed the often-happened "Unavailable" status of detection sensors.
-- Improved stability of connection with as less polling as possible. **Watchdog-timer** now checks for the session to be alive, and tries to restore if not. It tries to poll only if this still failed.
-- The indication-logic this component now follows:  
-If ONVIF subscription failed for some reason (ONVIF on the device disabled, port blocked by firewall, etc) - its detection sensors will intentionally show the state "Unavailable": for you to be able to see (without reading the log-file) that there is some problem with ONVIF subscription that needs to be fixed. But despite the sensors' "Unavailable" state, the **watchdog-timer** (after trying to restore the ONVIF subscription every time) polls (only if restoring of subscription failed) for possible motion with the time-interval set up in integration's config. Every time some motion gets detected by watchdog polling - it will switch the sensor(s) to "Detected" state. But as soon as the motion finishes (by next polling), the sensors will get back to "Unavailable" (instead of "Clear"), to continue indicating the ONVIF subscription problem.  
-- Workaround for Reolink issue in some camera models/firmwares: because of this issue motion-sensors were not resetting back on such camera models.  
-Now if you have such cameras and experience motion-sensors not coming back to "Clear" for a long time - you can tune the "Motion sensor force-off timeout" in integration's config to the desired value. If you have cameras that work OK without this workaround - having this value as "0" would save some HA computing resources.
-- Last-record sensor (former "last event") now stores the very last motion event's screenshot **automatically**. It is renamed to "last record" because not always it points to a last *motion event*. For example it can be just a very last **recorded chunk** which in case of continuous 24/7 record stores one-two hours of continuous video, with an "event" start like an hour-two ago (when the chunk's record started). Thus it looks more logical to me if it's named "last record".
-- Implemented the `last_record_url` attribute in the last-record sensor, and the "external IP/domain" plus "external port" settings for the camera/NVR (set up in the integration entry's config, not used if empty). Usable if you set up an automation to send a motion-notification to your phone with a video-link in it.  
-For example, you can set up different external HTTPS ports in each camera-entry settings, and forward all these external ports in your router to each of your camera (or simply forward the NVR's port if you use NVR-connection). This way, if you for example set the "external IP/domain" in the integration-entry settings like `<some IP>` and the "external port" as `<some port>`, then the generated video link in the `last_record_url` attribute would be like `https://<some IP>:<some port>/cgi-bin/<the rest of the URL>`. The automation could be e.g. like this:  
-```
-automation:
-  - alias: Notify mobile app
-    trigger:
-      ...
-    action:
-      - service: notify.mobile_app_<your_device_id_here>
-        data:
-          message: "Motion event"
-          data:
-            image: "https://github.com/home-assistant/assets/blob/master/logo/logo.png?raw=true"
-            video: "{{ state_attr('sensor.front_left_last_record', 'last_record_url') }}"
-```  
-**BE CAREFUL THOUGH** with this link: Reolink API requires login/pass credentials provided in a link to be able to watch a video from a device. Thus if you use this functionality - be sure the link is sent over **encrypted** channels, and the link itself is an **HTTPS** link (so that the credentials are not visible to anyone when the link is used).
-- Implemented the support of doorbell-cameras: a "**Visitor**" sensor is now available for such cameras. The sensor will trigger when a "Visitor" ONVIF-notification is sent by such camera.
-- Implemented a "Face detection" sensor. I see this "Face" AI-detection type sent in these above-mentioned rich ONVIF notifications, so maybe some Reolink cameras have this feature, or will have in future... Thus I've just made use of this AI detection type too in this component.
-- Media-browser support for NVRs is implemented.  
-I intentionally do not fill-in **all** the thumbnails during media-browsing: this way if your NVR is recording 24/7 - you have the way to distinguish. Those 1-2 hours chunks **with** thumbnails on them had some movement events, and those **without** thumbnails did not have any movements during all chunk recording (so the last-record sensor did not auto-write any thumbnails because no events happened).
-- Implemented garbage-collection for old thumbnails/scrennshots when browsing, to not overfill Home Assistant drive. But you still **need to setup a periodic action** that calls the integration's `cleanup_thumbnails` service: it will cleanup all the motion-events thumbnails older than the "Playback range" config setting (10 days by default). Otherwise you could overfill your HA drive by hi-res thumbnails, especially if you have a lot of motion-events on a lot of cameras.
-- The device **actions** now allow to create a screenshot-file for a particular camera at a current time, stored as `snapshot.jpg` instead of a name representing the time of the beginning of a last **recorded** video-chunk (used for thumbnails previously, which now is done automaticlly by a "last record" sensor). Not sure though this custom-action is needed at all - because there is already a standard HA screenshot-making service for any camera (just a little bit clunkier to setup)...
-- Now few cameras are created for each channel: one for each stream type.
-- When opening a current camera-stream sometimes the hi-res RTMP/RTSP video stream is too laggy. So there is a new "**Snapshots**" stream introduced, which will just show a choppy image sequence instead of a video stream (which is faster).
-- Now the **rich** ONVIF subscription format is supported: I've found out that some Reolink cameras send the notification messages that already have all the information about kind of AI object detected. Thus, if receiving such a rich notification, this component does not need to start a long communication with NVR/camera to ask it what particular object was just detected, before reporting motion - it just uses this info directly from the received notification message, which is much faster and doesn't waste machine/network resources.
-- Reolink's data-normalisation of NVR/camera API-commands is a mess (same as their "API reference" document found in their site downloads). To still have it a little more clear "what is global - what is camera-specific", switches are split in two sets in integration-entry UI: *kinda* global ones, and camera-specific ones (useful if NVR connection is used).
+## Requirements
 
-## IMPORTANT notes
+- Home Assistant **2025.1** or newer (declared in `hacs.json`). Developed and verified against **2026.8.1** on Python 3.14.
+- A camera/NVR user of type **Administrator**. A "Guest" user can read switch states but cannot change them and cannot call the services.
+- **ONVIF enabled** on the device. It is off by default on some models and can sometimes only be enabled from a monitor attached to the NVR, not from the web UI or the phone app. A firmware upgrade may reset it.
+- Home Assistant's **Internal URL** set to a reachable `http://<ip>:<port>` address — not an mDNS name.
 
-:warning: **For the motion detection to work, Home Assistant must be reachable via HTTP from your local network. So when using HTTPS internally, motion detection will not work.** This is the Reolink firmware bug: it fails to send ONVIF notifications to HTTPS webhooks.
+> :warning: **Motion detection needs Home Assistant reachable over plain HTTP on the local network.** Reolink firmware fails to deliver ONVIF notifications to an HTTPS webhook, so if your internal URL is HTTPS, motion events will never arrive.
 
-:warning: This new component most likely will **conflict** if used at the same time with `reolink_dev`. So it would be a good idea to save the Home Assistant config folder, and remove `reolink_dev` before start using this one. Maybe you'll need to make few corrections to already existing camera-automations, because there are some differences in this component's namings/actions...
+> :warning: **Do not run this together with the official `reolink` integration for the same device.** Both subscribe to the device's ONVIF events and will fight over them. Disable or remove one of them.
 
-:warning: **There is a BUG in Reolink NVR firmware** (at least I tested it on my **RLN8-410**): it only sends ONVIF events-notifications if motion happened on the camera connected to its **very first** (index "0") channel. Reolink is aware of that, and told me they are "working on it"...  
-Still works kinda OK for me, because all my cameras share a little part of view with the channel-0 camera - so when channel-0 sees something and sends an ONVIF event, the component anyway polls all cameras "what's happening?" and reports movements from **all** cameras if any...  
-If this is not the case for you - maybe it would make sense to continue bombing Reolink support with complaints about that, forcing them to finally fix this silly bug... Because other than that - I like it a lot more to have a connection to NVR than having a couple of separate integration-entries for each camera separately. Especially that there are no recordings of NVR's big hard-drive available from HA if connected to a camera instead of the NVR...
-
-**Another weird thing** with Reolink firmware: the 8-channels **RLN8-410** NVR reports itself as having **12** channels. So don't be surprised if you got provided with a selection list of 12 channels during its initial setup.
-
-:warning: The code is rewritten quite significantly, so there is a good chance some bugs could still happen. I did not test **direct** camera connections so far (I have it connected to my **RLN8-410** NVR). So if you get any bugs when connecting to cameras directly - feel free to open tickets in a tracker here...
-
-**There is NO LOGO** on this integration inside Home Assistant. HA devs for some reason made logos as **external links** to their `brands` repo site, instead of allowing to custom-components to supply logo-file **locally** with some `manifest.json` config. And they **rejected** to accept my simple pull-request to their `brands` repo before the custom-component repo becomes available to users. Which introduces stupid chicken-egg problem, where I must release an ugly-looking custom-component without a logo before I even allowed to do a pull-request with logo-files to their `brands` repo...  
-I suspect **all** components will have no logos shown up with this approach if HA is in local network and all external access is blocked for it for some security reasons... E.g. for a reason that any external HA-image request from your IP is a "knuck-knuck" to a "big brother" reporting "there is a Home Assistant at this address, with this list of integrations activated"...  
-I have no desire nor time to argue with them, so it is how it is. This component works excellently for me and all my cameras, and I don't care how it looks with this stupid "*not available*" external-link logo...
+---
 
 ## Installation
 
-### Manual install
+### HACS ([how to install HACS](https://hacs.xyz/docs/setup/prerequisites))
+
+1. Open **HACS** in the Home Assistant menu
+2. Open the top-right menu (three dots) → **Custom repositories**
+3. Paste `https://github.com/materko/reolink_cctv`, choose category **Integration**, click **Add**
+4. Open the newly listed **Reolink IP NVR/camera** and click **Download**
+
+### Manual
 
 ```bash
 # Download a copy of this repository
-$ wget https://github.com/materko/reolink_cctv/archive/master.tar.gz
+wget https://github.com/materko/reolink_cctv/archive/master.tar.gz
 
 # Unzip the archive
-$ tar -xzf master.tar.gz
+tar -xzf master.tar.gz
 
-# Move the reolink_cctv directory into your custom_components directory in your Home Assistant install
-$ mv reolink_cctv-master/custom_components/reolink_cctv <home-assistant-install-directory>/config/custom_components/
+# Move the reolink_cctv directory into the custom_components directory of your Home Assistant install
+mv reolink_cctv-master/custom_components/reolink_cctv <home-assistant-config-directory>/custom_components/
 
 # Clean up
-rm -rf ./reolink_cctv-master
-rm -f ./master.tar.gz
+rm -rf ./reolink_cctv-master ./master.tar.gz
 ```
 
-### HACS install ([How to install HACS](https://hacs.xyz/docs/setup/prerequisites))
+> :warning: **Restart Home Assistant after installing, and clear your browser cache** — otherwise the integration may not show up in the list.
 
-  1. Click on HACS in the Home Assistant menu
-  2. Click on **Integrations**
-  3. Click the top right menu (the three dots)
-  4. Select **Custom repositories**
-  5. Paste the repository URL (`https://github.com/materko/reolink_cctv`) in the dialog box
-  6. Select category **Integration**
-  7. Click **Add**
-  8. Click **Install** on the **Reolink IP NVR/camera** box that has now appeared
+Then go to **Settings → Devices & services → Add integration → Reolink IP NVR/camera** and enter username, password and host. Port and HTTPS are detected automatically; if the connection fails, the form is re-shown with explicit **port** and **use HTTPS** fields.
 
+---
 
-> :warning: **After executing one of the above installation methods, restart Home Assistant. Also clear your browser cache before proceeding to the next step, as the integration may not be visible otherwise.**
+## Configuration options
 
+After setup, all of the following are available under **Configure** on the integration entry:
 
-In your Home Assistant installation go to: **Configuration > Integrations**, click the button **Add Integration > Reolink IP NVR/camera**
-Enter the details for your NVR/camera. The device and other sensors will now be available as an entity.
+| Option | Default | Description |
+| :----- | :------ | :---------- |
+| External IP/domain | *(empty)* | Host used to build the `last_record_url` attribute for links reachable from outside your LAN. Unused when empty. |
+| External port | *(empty)* | Port used together with the above. |
+| Protocol | `rtmp` | `rtmp` or `rtsp` — the protocol used for live streams. |
+| Stream | `sub` | `main`, `sub` or `ext` — which stream the recordings and the default camera use. `ext` exists only with RTMP; selecting it under RTSP silently falls back to `sub`. |
+| Motion sensor off delay | `5` | Seconds the motion sensor stays "Detected" after the last detection. `0` disables the delay. |
+| Motion sensor force-off timeout | `0` | Workaround for camera models that never send the "motion ended" notification: force the sensor back to "Clear" after this many seconds. `0` disables the workaround and saves some resources. |
+| ONVIF subscription watchdog interval | `60` | Seconds between subscription health checks (`0`–`180`). `0` disables the watchdog. |
+| Playback range (days) | `10` | How far back recordings are searched, and how old thumbnails may get before cleanup removes them. |
+| Playback thumbnail path | `<config>/.storage/reolink_cctv/<device-id>` | Where event thumbnails are stored. |
+| Timeout | `60` | Device request timeout in seconds (`1`–`120`). |
 
-For the services and switch entities of this integration to work, you need a camera user of type "Administrator". Users of type "Guest" can only view the switch states but cannot change them and cannot call the services. Users are created and managed through the web interface of the camera (Device Settings / Cog icon -> User) or through the app (Device Settings / Cog icon -> Advanced -> User Management).
+---
 
-If you connected **directly to NVR** (instead of to each camera separately):
-- Reolink NVR firmware has a critical **BUG**: the ONVIF SWN motion detection notifications are sent by NVR only if motion is detected on a camera connected to its very first channel (with the index 0). So Home Assistant will not inform you about any motion events happening on other NVR channels.
-Reolink told me they are "aware of this bug and working on it", but it looks to me they always reply with this same phrase to any bug reported to them... Would be useful if every user would be reporting this same bug to Reolink again and again, pushing on them to finally fix this...
+## Entities
 
-### Troubleshooting
-* Make sure you have set up the **Internal URL** in Home Assistant to the correct IP address and port (do not use the mDNS name)
-* Make sure ONVIF is enabled on your camera/NVR. It might be disabled by default and can only be enabled when you have a screen connected to the NVR, not via webb or app clients. Be aware that this can be reset during a firmware upgrade.
+Which entities appear depends on what the device reports as supported, so the lists below are the maximum — a plain NVR with non-AI cameras will show only a subset.
+
+### Cameras
+
+For **every channel** an entity is created per stream type: `sub`, `main`, `snapshots`, plus `ext` when the protocol is RTMP. **Only the `sub` camera is enabled by default**; enable the others in the entity registry if you need them.
+
+`snapshots` is not a video stream — it repeatedly fetches still images. It is the fastest and most reliable way to show a camera when the high-resolution stream is too laggy to be usable.
+
+### Binary sensors
+
+| Sensor | Created when |
+| :----- | :----------- |
+| Motion | always, one per channel |
+| Person / Vehicle / Pet / Face detected | the channel reports AI support for that object type |
+| Visitor | the channel is a doorbell |
+
+**Availability is used as a status indicator on purpose.** If the ONVIF subscription is not alive, detection sensors show **Unavailable** rather than "Clear", so a broken subscription is visible without reading the log. The watchdog keeps trying to re-subscribe; while it fails, it also polls for motion, so real motion still flips the sensor to "Detected" — and back to "Unavailable" afterwards, to keep signalling the problem.
+
+### Sensor
+
+A **Last record** sensor per channel (only when the device has a hard drive). Its state is the start timestamp of the most recent recorded chunk. It also writes that event's thumbnail automatically.
+
+Attributes: `oldest_day`, `vod_event_id`, `has_thumbnail`, `thumbnail_path`, `last_record_url`, `duration`.
+
+It is called "last record", not "last event", because with 24/7 recording it points at the current recording chunk, which may have started an hour or two ago and is not a motion event as such.
+
+> :warning: `last_record_url` embeds the device login and password, because the Reolink API requires credentials in the URL. Only ever send it over encrypted channels, and only as an HTTPS link.
+
+Example notification automation:
+
+```yaml
+automation:
+  - alias: Notify mobile app
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.front_left_motion
+        to: "on"
+    actions:
+      - action: notify.mobile_app_<your_device_id_here>
+        data:
+          message: "Motion event"
+          data:
+            video: "{{ state_attr('sensor.front_left_last_record', 'last_record_url') }}"
+```
+
+### Switches
+
+| Switch | Scope | Created when the device supports |
+| :----- | :---- | :------------------------------- |
+| Email | device | email alerts |
+| FTP | device | FTP upload |
+| Push notifications | device | push to Android/iOS |
+| Recording | device | recording to disk |
+| Record audio | per channel | audio |
+| IR lights | per channel | infrared lights |
+| Spotlight | per channel | a white LED spotlight |
+| Doorbell light | per channel | a doorbell power LED |
+| Siren | per channel | an audio alarm |
+
+Reolink's API does not cleanly separate device-wide from per-camera settings, so the first four are created once for the whole device and the rest per channel.
+
+---
+
+## Recordings (media browser)
+
+Under **Media → Reolink IP NVR/camera** you can browse per camera → per day → per recording, and play a recording back. Playback is re-wrapped into HLS by Home Assistant's stream component, so it plays in any browser.
+
+With continuous 24/7 recording, entries are the NVR's own chunks — typically one hour each — not motion clips. Thumbnails are **deliberately not generated for every entry**: a chunk that has a thumbnail contained a motion event (the Last record sensor wrote one), a chunk without a thumbnail had no motion at all. That is a quick visual filter when scrolling a 24/7 archive.
+
+Old thumbnails are cleaned up while browsing, but browsing alone is not enough — set up a periodic call of the `cleanup_thumbnails` service if you have many motion events across many cameras, or the thumbnails will fill your Home Assistant disk.
+
+---
 
 ## Services
 
-The Reolink integration supports all default camera [services](https://www.home-assistant.io/integrations/camera/#services) and additionally provides the following services:
+All standard camera [services](https://www.home-assistant.io/integrations/camera/#services) work. Additionally:
 
-### Service `reolink_cctv.cleanup_thumbnails`
+### `reolink_cctv.set_sensitivity`
 
-Set the day and night mode parameter of the camera.
+Set the motion detection sensitivity. Either all time-schedule presets at once, or one specific preset.
 
-| Service data attribute  | Optional  | Description  |
-| :---------------------- | :-------- | :----------- |
-| `older_than`            | no        | Remove all thumbnails older than the specified date, irregardless of matching VoD.
+| Field | Required | Description |
+| :---- | :------- | :---------- |
+| `entity_id` | yes | The camera to control. |
+| `sensitivity` | yes | `1` (low) to `50` (high). |
+| `preset` | no | Time-schedule preset to change. When omitted, all presets are changed. |
 
-### Service `reolink_cctv.set_sensitivity`
+### `reolink_cctv.set_daynight`
 
-Set the motion detection sensitivity of the camera. Either all time schedule presets can be set at once, or a specific preset can be specified.
+| Field | Required | Description |
+| :---- | :------- | :---------- |
+| `entity_id` | yes | The camera to control. |
+| `mode` | yes | `AUTO`, `COLOR` or `BLACKANDWHITE`. |
 
-| Service data attribute  | Optional  | Description  |
-| :---------------------- | :-------- | :----------- |
-| `entity_id`             | no        | The camera to control.
-| `sensitivity`           | no        | The sensitivity to set, a value between 1 (low sensitivity) and 50 (high sensitivity).
-| `preset`                | yes       | The time schedule preset to set. Presets can be found in the Web UI of the camera.
+### `reolink_cctv.set_backlight`
 
-### Service `reolink_cctv.set_backlight`
+Compensates for differences between dark and bright objects using BLC or WDR. It can improve clarity in high-contrast scenes, but test it at different times of day and night before keeping it.
 
-Optimizing brightness and contrast levels to compensate for differences between dark and bright objects using either BLC or WDR mode.
-This may improve image clarity in high contrast situations, but it should be tested at different times of the day and night to ensure there is no negative effect.
+| Field | Required | Description |
+| :---- | :------- | :---------- |
+| `entity_id` | yes | The camera to control. |
+| `mode` | yes | `BACKLIGHTCONTROL`, `DYNAMICRANGECONTROL` or `OFF`. |
 
-| Service data attribute  | Optional  | Description  |
-| :---------------------- | :-------- | :----------- |
-| `entity_id`             | no        | The camera to control.
-| `mode`                  | no        | The backlight parameter supports the following values: `BACKLIGHTCONTROL`: use Backlight Control `DYNAMICRANGECONTROL`: use Dynamic Range Control `OFF`: no optimization
+### `reolink_cctv.ptz_control`
 
-### Service `reolink_cctv.set_daynight`
+Only available on cameras that report PTZ support.
 
-Set the day and night mode parameter of the camera.
+| Field | Required | Description |
+| :---- | :------- | :---------- |
+| `entity_id` | yes | The camera to control. |
+| `command` | yes | `AUTO`, `DOWN`, `FOCUSDEC`, `FOCUSINC`, `LEFT`, `LEFTDOWN`, `LEFTUP`, `RIGHT`, `RIGHTDOWN`, `RIGHTUP`, `STOP`, `TOPOS`, `UP`, `ZOOMDEC`, `ZOOMINC`. |
+| `preset` | no | Preset ID for the `TOPOS` command. Available presets are listed in the camera's `ptz_presets` attribute. |
+| `speed` | no | Movement speed. Not applicable to `STOP` and `AUTO`. |
 
-| Service data attribute  | Optional  | Description  |
-| :---------------------- | :-------- | :----------- |
-| `entity_id`             | no        | The camera to control.
-| `mode`                  | no        | The day and night mode parameter supports the following values: `AUTO` Auto switch between black & white mode `COLOR` Always record videos in color mode `BLACKANDWHITE` Always record videos in black & white mode.
+**The camera keeps moving until `STOP` is sent.**
 
-### Service `reolink_cctv.ptz_control`
+### `reolink_cctv.cleanup_thumbnails`
 
-Control the PTZ (Pan Tilt Zoom) movement of the camera.
+Removes stored VoD thumbnails older than the **Playback range** option, freeing disk space. Only available on cameras with playback capability.
 
-| Service data attribute  | Optional  | Description  |
-| :---------------------- | :-------- | :----------- |
-| `entity_id`             | no        | The camera to control.
-| `command`               | no        | The command to execute. Possibe values are: `AUTO`, `DOWN`, `FOCUSDEC`, `FOCUSINC`, `LEFT`, `LEFTDOWN`, `LEFTUP`, `RIGHT`, `RIGHTDOWN`, `RIGHTUP`, `STOP`, `TOPOS`, `UP`, `ZOOMDEC` and `ZOOMINC`.
-| `preset`                | yes       | In case of the command `TOPOS`, pass the preset ID here. The possible presets are listed as attribute on the camera.
-| `speed`                 | yes       | The speed at which the camera moves. Not applicable for the commands: `STOP` and `AUTO`.
+| Field | Required | Description |
+| :---- | :------- | :---------- |
+| `entity_id` | yes | The camera whose thumbnails to clean. |
 
-**The camera keeps moving until the `STOP` command is passed to the service.**
+> The service schema still accepts an `older_than` field, but the implementation ignores it — the cutoff always comes from the Playback range setting.
 
-## Camera
+---
 
-This integration creates few camera entities, one for each stream type. In addition it provides a VoD stream type configurable from the integrations config-panel. In the options menu, the following parameters can be configured:
+## Device automations
 
-| Parameter               | Description                                                                                                 |
-| :-------------------    | :---------------------------------------------------------------------------------------------------------- |
-| Protocol                | Switch between the RTMP or RTSP streaming protocol.                                                         |
-| Stream                  | Switch between Main, Sub, or Ext camera VoD stream.                                                         |
+Besides the entities, the integration registers device-level building blocks usable from the automation editor:
 
-## Binary Sensor
+- **Trigger** — *"&lt;camera&gt; last record: new video file"*, fires when a new recording appears.
+- **Conditions** — *"&lt;camera&gt; last record: has thumbnail"* / *"no thumbnail"*.
+- **Action** — takes a snapshot of a camera and stores it as `snapshot.jpg` in the thumbnail directory. Home Assistant's built-in `camera.snapshot` service does the same thing with more control, so this exists mostly for convenience.
 
-When the camera supports motion detection events, a binary sensor is created for real-time motion detection. The time to switch motion detection off can be configured via the options menu, located at the integrations page. Please notice: for using the motion detection, your Home Assistant should be reachable (within you local network) over http (not https).
+---
 
-| Parameter               | Description                                                                                                 |
-| :-------------------    | :---------------------------------------------------------------------------------------------------------- |
-| Motion sensor off delay | Control how many seconds it takes (after the last motion detection) for the binary sensor to switch off.    |
+## Known device quirks
 
-When the camera supports AI objects detection, a binary sensor is created for each type of object (person, vehicle, pet)
+**Motion notifications do not identify the channel.** The NVR announces motion without saying which camera it came from. The integration handles this by querying every channel's motion state whenever such a notification arrives, so all channels do report motion. Some firmware sends "rich" ONVIF notifications that already contain the detected AI object type; those are used directly, without asking the device anything, which is faster and lighter.
 
-## Switch
+**Channel count can be wrong.** An 8-channel RLN8-410 reports itself as having **12** channels, so do not be surprised by a longer channel list than your NVR has ports.
 
-Depending on the camera, the following switches are created:
+**No logo in the Home Assistant UI.** Logos for integrations live in Home Assistant's central `brands` repository and are loaded as external links, so a custom integration cannot ship one locally. Nothing is broken; the icon is simply missing.
 
-| Switch               | Description |
-| :------------------- | :------------------------------------------------------------ |
-| Email                | Switch email alerts from the camera when motion is detected.  |
-| FTP                  | Switch FTP upload of photo and video when motion is detected. |
-| IR lights            | Switch the infrared lights to auto or off.                    |
-| Record audio         | Record auto or mute. This also implies the live-stream.       |
-| Push notifications   | Enable or disable push notifications to Android/IOS.          |
-| Recording            | Switch recording to the SD card or hard drive.                |
+### Troubleshooting
 
-## Unsupported models
+See [TSHOOT.md](TSHOOT.md) for log-collection instructions. The usual suspects:
 
-The following models are not to be supported:
+- Internal URL not set, or set to an mDNS name instead of an IP.
+- Internal URL using HTTPS — ONVIF notifications will not arrive (see Requirements).
+- ONVIF disabled on the device, or reset by a firmware upgrade.
+- The device user is not an Administrator.
+
+---
+
+## Untested / unsupported
+
+The following were listed as unsupported by the upstream project and have **not** been re-verified in this fork:
 
 - Battery-powered cameras
-- B800: Only with NVR
-- B400: Only with NVR
-- D400: Only with NVR
+- B800, B400, D400 (via NVR only)
 - Lumus
+
+Direct connections to a **standalone camera** (rather than to an NVR) are implemented but are not what this fork is exercised on — it is developed against an NVR connection.
+
+---
+
+## Credits
+
+Originally written by [JimStar](https://github.com/JimStar) as a rewrite of `reolink_dev`. This fork continues it with support for current Home Assistant releases and for NVR firmware 2.x.

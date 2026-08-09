@@ -15,8 +15,14 @@ logger:
   logs:
     custom_components.reolink_cctv: debug
     custom_components.reolink_cctv.host.data: warning
-    reolink_ip: debug
+    custom_components.reolink_cctv.reolink_ip: debug
+    custom_components.reolink_cctv.reolink_ip.api.data: warning
 ```
+
+The device API library is bundled inside the integration, so its logger is
+`custom_components.reolink_cctv.reolink_ip` (it was a separate `reolink_ip` package before v0.2.0).
+The two `.data` loggers carry full request/response payloads — leave them at `warning`
+unless you specifically need to inspect the raw traffic, as they are extremely verbose.
 Copy and Paste all logs after you have clicked on "LOAD FULL HOMEASSISTANT LOG" button.
 
 ## Frequent issues
@@ -29,7 +35,7 @@ Copy and Paste all logs after you have clicked on "LOAD FULL HOMEASSISTANT LOG" 
 - HomeAssistant must have an internal URL configured and:
   - IT MUST NOT USE HTTPS : Reolink doesn't support HTTPS based Webhooks.
   - URL also should not be using a DNS name but an ip address instead unless you have a solid DNS setup your camera is probably not able to resolve your address
-- You can re-configure default timer called "Subscription watchdog-timer interval" for a specific device, it defaults to 30 seconds but you can go down to 2-5 seconds. Because it will hammer your NVR/camera's API every X seconds, it may have CPU/RAM/stability impacts on your device.
+- You can re-configure the timer called "ONVIF subscription watchdog interval" for a specific device. It defaults to **60** seconds and accepts **0–180** (0 disables the watchdog entirely). Lowering it makes a broken subscription recover faster, but it polls your NVR/camera's API every X seconds, which may have CPU/RAM/stability impacts on the device. Note the watchdog only polls while the subscription is actually down — while it is healthy, nothing is polled.
   
 ### Push notification toggle has no effect in Android/iPhone app which doesn't change state
 
