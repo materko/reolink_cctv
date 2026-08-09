@@ -1313,7 +1313,8 @@ class Host:
 
                 if data["cmd"] == "GetDevInfo":
                     dev_info = data["value"]["DevInfo"]
-                    self._is_nvr                = dev_info.get("exactType", "CAM") == "NVR"
+                    # Firmware 3.x reports "exactType", firmware 2.x only has "type" (e.g. RLN8-410-E fw 2.0.0 returns {"type": "NVR"} without "exactType").
+                    self._is_nvr                = dev_info.get("exactType", dev_info.get("type", "CAM")) == "NVR"
                     self._nvr_serial            = dev_info["serial"]
                     self._nvr_name              = dev_info["name"]
                     self._nvr_model: str        = dev_info["model"]
