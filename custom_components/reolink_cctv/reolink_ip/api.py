@@ -2316,10 +2316,44 @@ class Host:
 
 
     async def request_vod_files(self, channel: int, start: datetime, end: datetime, status_only: bool = False, stream: Optional[str] = None) -> tuple[list[typings.SearchStatus], Optional[list[typings.SearchFile]]]:
-        """Send search VOD-files command."""
+        """Send search VOD-files command, splitting the range per calendar month.
+
+        Reolink's "Search" API command fails (rspCode -12, "get config failed") when
+        StartTime and EndTime fall into different calendar months, so a spanning
+        range has to be requested month-by-month and the results merged."""
         if channel not in self._channels:
             return None, None
 
+        statuses: Optional[list[typings.SearchStatus]] = None
+        files: Optional[list[typings.SearchFile]]      = None
+
+        chunk_start = start
+        while chunk_start <= end:
+            if chunk_start.year == end.year and chunk_start.month == end.month:
+                chunk_end = end
+            else:
+                if chunk_start.month == 12:
+                    next_month = chunk_start.replace(year = chunk_start.year + 1, month = 1, day = 1, hour = 0, minute = 0, second = 0)
+                else:
+                    next_month = chunk_start.replace(month = chunk_start.month + 1, day = 1, hour = 0, minute = 0, second = 0)
+                chunk_end = next_month - timedelta(seconds = 1)
+
+            chunk_statuses, chunk_files = await self._request_vod_files_chunk(channel, chunk_start, chunk_end, status_only, stream)
+            if chunk_statuses is not None:
+                statuses = chunk_statuses if statuses is None else statuses + chunk_statuses
+            if chunk_files is not None:
+                files = chunk_files if files is None else files + chunk_files
+
+            if chunk_end >= end:
+                break
+            chunk_start = chunk_end + timedelta(seconds = 1)
+
+        return statuses, files
+    #endof request_vod_files()
+
+
+    async def _request_vod_files_chunk(self, channel: int, start: datetime, end: datetime, status_only: bool = False, stream: Optional[str] = None) -> tuple[list[typings.SearchStatus], Optional[list[typings.SearchFile]]]:
+        """Send search VOD-files command for a range within one calendar month."""
         if stream is None:
             stream = self._stream
 
@@ -2379,7 +2413,7 @@ class Host:
             _LOGGER.error("Host %s:%s: received an unexpected response from \"Search\" command: %s", self._host, self._port, e)
 
         return None, None
-    #endof request_vod_files()
+    #endof _request_vod_files_chunk()
 
 
     async def send_setting(self, body: dict) -> bool:
