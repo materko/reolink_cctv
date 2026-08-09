@@ -1416,7 +1416,7 @@ class Host:
 
     def map_channels_json_response(self, json_data: list[dict], channels: list[int]):
         if len(json_data) != len(channels):
-            _LOGGER.error("Host %s:%s: error mapping response to channels, received %i responses while requesting %i.", self._host, self._port, len(json_data), len(channels))
+            _LOGGER.error("Host %s:%s: error mapping response to channels, received %s responses while requesting %s.", self._host, self._port, len(json_data), len(channels))
             return
 
         for data, channel in zip(json_data, channels):
@@ -2324,6 +2324,11 @@ class Host:
         if channel not in self._channels:
             return None, None
 
+        # Callers mix tz-aware and tz-naive datetimes; the Search API only uses wall-clock fields, so strip tzinfo when they differ to keep them comparable.
+        if (start.tzinfo is None) != (end.tzinfo is None):
+            start = start.replace(tzinfo = None)
+            end   = end.replace(tzinfo = None)
+
         statuses: Optional[list[typings.SearchStatus]] = None
         files: Optional[list[typings.SearchFile]]      = None
 
@@ -2565,10 +2570,10 @@ class Host:
         if self._subscription_time_difference is None or self._subscription_termination_time is None:
             return -1
 
-        diff = self._subscription_termination_time - datetime.utcnow()
+        diff = int((self._subscription_termination_time - datetime.utcnow()).total_seconds())
         _LOGGER.debug("Host %s:%s should renew in: %i seconds...", self._host, self._port, diff)
 
-        return diff.seconds
+        return diff
     #endof renewtimer()
 
 

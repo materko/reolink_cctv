@@ -232,10 +232,16 @@ class LastRecordSensor(ReolinkCoordinatorEntity, SensorEntity):
             path = os.path.join(self._host.thumbnail_path, f"{self._channel}/{last.event_id}.{THUMBNAIL_EXTENSION}")
         )
 
-        if not os.path.isfile(thumbnail.path):
+        def ensure_thumbnail_dir() -> bool:
+            """Return whether the thumbnail already exists, creating its directory if not."""
+            if os.path.isfile(thumbnail.path):
+                return True
             directory = os.path.join(self._host.thumbnail_path, f"{self._channel}")
             if not os.path.isdir(directory):
                 os.makedirs(directory)
+            return False
+
+        if not await self.hass.async_add_executor_job(ensure_thumbnail_dir):
             if self._channel in self._host.cameras:
                 service_data = {
                     ATTR_ENTITY_ID: self._host.cameras[self._channel].entity_id,
@@ -243,7 +249,7 @@ class LastRecordSensor(ReolinkCoordinatorEntity, SensorEntity):
                 }
                 await self._hass.services.async_call(CAMERA_DOMAIN, SERVICE_SNAPSHOT, service_data, blocking = True)
 
-        thumbnail.exists = os.path.isfile(thumbnail.path)
+        thumbnail.exists = await self.hass.async_add_executor_job(os.path.isfile, thumbnail.path)
 
         data: dict          = self._hass.data.setdefault(DOMAIN_DATA, {})
         data                = data.setdefault(self._host.unique_id, {})

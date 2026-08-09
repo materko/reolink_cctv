@@ -301,11 +301,18 @@ class ReolinkHost:
 
         start_date_timestamp = start.timestamp()
         directory = os.path.join(self.thumbnail_path, f"{channel}")
-        if os.path.isdir(directory):
-            for f in os.listdir(directory):
-                f = os.path.join(directory, f)
-                if os.stat(f).st_mtime < start_date_timestamp:
-                    os.remove(f)
+
+        def cleanup():
+            if os.path.isdir(directory):
+                for f in os.listdir(directory):
+                    f = os.path.join(directory, f)
+                    try:
+                        if os.stat(f).st_mtime < start_date_timestamp:
+                            os.remove(f)
+                    except OSError:
+                        pass
+
+        await self._hass.async_add_executor_job(cleanup)
     #endof cleanup_vod_thumbnails()
 
 

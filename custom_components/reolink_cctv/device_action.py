@@ -91,8 +91,10 @@ async def async_call_action_from_config(hass: HomeAssistant, config: dict, varia
                     ATTR_FILENAME:  file_path,
                 }
 
-                if os.path.isfile(file_path):
-                    os.remove(file_path)
+                def remove_stale_snapshot():
+                    if os.path.isfile(file_path):
+                        os.remove(file_path)
+                await hass.async_add_executor_job(remove_stale_snapshot)
 
                 return await hass.services.async_call(
                     CAMERA_DOMAIN,

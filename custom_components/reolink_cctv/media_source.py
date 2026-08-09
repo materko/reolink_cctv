@@ -282,13 +282,20 @@ class ReolinkMediaSource(MediaSource):
             # Cleanup older thumbnail files, to not overfill the drive...
             start_date_timestamp = start_date.timestamp()
             directory = os.path.join(host.thumbnail_path, f"{camera_id}")
-            if not os.path.isdir(directory):
-                os.makedirs(directory)
-            else:
+
+            def cleanup_thumbnails():
+                if not os.path.isdir(directory):
+                    os.makedirs(directory)
+                    return
                 for f in os.listdir(directory):
                     f = os.path.join(directory, f)
-                    if os.stat(f).st_mtime < start_date_timestamp:
-                        os.remove(f)
+                    try:
+                        if os.stat(f).st_mtime < start_date_timestamp:
+                            os.remove(f)
+                    except OSError:
+                        pass
+
+            await self.hass.async_add_executor_job(cleanup_thumbnails)
 
             search, _ = await host.api.request_vod_files(int(camera_id), start_date, end_date, True)
 
@@ -348,7 +355,7 @@ class ReolinkMediaSource(MediaSource):
                 #         }
                 #         await self.hass.services.async_call(CAMERA_DOMAIN, SERVICE_SNAPSHOT, service_data, blocking = True)
 
-                thumbnail = os.path.isfile(thumbnail_file)
+                thumbnail = await self.hass.async_add_executor_job(os.path.isfile, thumbnail_file)
 
                 time        = start_date.time()
                 duration    = end_date - start_date
