@@ -2,7 +2,6 @@
 
 import logging
 import os
-import ssl
 import datetime as dt
 import aiohttp
 
@@ -12,9 +11,11 @@ from    xml.etree              import ElementTree as XML
 
 import  homeassistant.util.dt                   as dt_util
 from    homeassistant.core                      import HomeAssistant
+from    homeassistant.components                import webhook
 from    homeassistant.helpers.network           import get_url, NoURLAvailableError
 from    homeassistant.helpers.storage           import STORAGE_DIR
 from    homeassistant.helpers.aiohttp_client    import async_create_clientsession
+from    homeassistant.util.ssl                  import SSLCipherList
 from    homeassistant.const                     import (
     CONF_HOST,
     CONF_PORT,
@@ -23,8 +24,8 @@ from    homeassistant.const                     import (
     CONF_TIMEOUT
 )
 
-from reolink_ip.typings     import SearchTime
-from reolink_ip.api         import (
+from .reolink_ip.typings    import SearchTime
+from .reolink_ip.api        import (
     Host,
     MOTION_DETECTION_TYPE,
     FACE_DETECTION_TYPE,
@@ -92,7 +93,7 @@ class ReolinkHost:
         self.sensor_pet_detection:      dict[int, ObjectDetectedSensor] = dict()
         self.sensor_visitor_detection:  dict[int, VisitorSensor]        = dict()
 
-        self.motion_detection_enabled: Optional[list(bool)] = None
+        self.motion_detection_enabled: Optional[dict[int, bool]] = None
 
         self._clientSession: Optional[aiohttp.ClientSession] = None
         
@@ -252,13 +253,8 @@ class ReolinkHost:
         """Return the iohttp session."""
 
         if self._clientSession is None or self._clientSession.closed:
-            context = ssl.create_default_context()
-            context.set_ciphers("DEFAULT")
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
-
-            self._clientSession = async_create_clientsession(self._hass, verify_ssl = False)
-            self._clientSession.connector._ssl = context
+            # Old Reolink firmwares need weak ciphers over HTTPS, so use the INSECURE cipher-list without certificate verification.
+            self._clientSession = async_create_clientsession(self._hass, verify_ssl = False, ssl_cipher = SSLCipherList.INSECURE)
 
         return self._clientSession
     #endof get_iohttp_session()
@@ -372,16 +368,16 @@ class ReolinkHost:
         self._webhook_id    = f"reolink_{no_spaces_name}_webhook"#self._hass.components.webhook.async_generate_id()
         self._event_id      = self._webhook_id
         try:
-            self._hass.components.webhook.async_register(DOMAIN, self._event_id, self._webhook_id, handle_webhook)
+            webhook.async_register(self._hass, DOMAIN, self._event_id, self._webhook_id, handle_webhook)
         except ValueError:
             _LOGGER.debug("Error registering webhook %s. Trying to unregister it first and re-register again.", self._webhook_id)
             try:
-                self._hass.components.webhook.async_unregister(self._webhook_id)
+                webhook.async_unregister(self._hass, self._webhook_id)
             except Exception as e:
                 _LOGGER.debug("Error unregistering webhook %s: %s", self._webhook_id, str(e))
 
             try:
-                self._hass.components.webhook.async_register(DOMAIN, self._event_id, self._webhook_id, handle_webhook)
+                webhook.async_register(self._hass, DOMAIN, self._event_id, self._webhook_id, handle_webhook)
             except ValueError:
                 _LOGGER.error("Error registering a webhook %s for %s: maybe a duplicate device-name in your setup?", self._webhook_id, device_name)
                 self._event_id      = None
@@ -412,7 +408,7 @@ class ReolinkHost:
         try:
             self._webhook_url = "{}{}".format(
                 get_url(self._hass, prefer_external = False),
-                self._hass.components.webhook.async_generate_path(self._webhook_id),
+                webhook.async_generate_path(self._webhook_id),
             )
         except NoURLAvailableError:
             if not self.warnedAboutNoURLAvailableError:
@@ -422,12 +418,12 @@ class ReolinkHost:
             try:
                 self._webhook_url = "{}{}".format(
                     get_url(self._hass, prefer_external = True),
-                    self._hass.components.webhook.async_generate_path(self._webhook_id),
+                    webhook.async_generate_path(self._webhook_id),
                 )
             except NoURLAvailableError:
                 _LOGGER.error("Error registering URL for webhook %s: URL is not available.", self._webhook_id)
                 try:
-                    self._hass.components.webhook.async_unregister(self._webhook_id)
+                    webhook.async_unregister(self._hass, self._webhook_id)
                 except Exception as e:
                     _LOGGER.debug("Error unregistering webhook %s: %s", self._webhook_id, str(e))
                 self._event_id      = None
@@ -441,7 +437,7 @@ class ReolinkHost:
                 else:
                     _LOGGER.error("Unknown error registering URL for webhook %s.", self._webhook_id)
                 try:
-                    self._hass.components.webhook.async_unregister(self._webhook_id)
+                    webhook.async_unregister(self._hass, self._webhook_id)
                 except Exception as e:
                     _LOGGER.debug("Error unregistering webhook %s: %s", self._webhook_id, str(e))
                 self._event_id      = None
@@ -455,7 +451,7 @@ class ReolinkHost:
             else:
                 _LOGGER.error("Unknown error registering URL for webhook %s.", self._webhook_id)
             try:
-                self._hass.components.webhook.async_unregister(self._webhook_id)
+                webhook.async_unregister(self._hass, self._webhook_id)
             except Exception as e:
                 _LOGGER.debug("Error unregistering webhook %s: %s", self._webhook_id, str(e))
             self._event_id      = None
@@ -473,7 +469,7 @@ class ReolinkHost:
         if self._webhook_id:
             _LOGGER.info("Unregistering webhook %s", self._webhook_id)
             try:
-                self._hass.components.webhook.async_unregister(self._webhook_id)
+                webhook.async_unregister(self._hass, self._webhook_id)
             except Exception as e:
                 _LOGGER.debug("Error unregistering webhook %s: %s", self._webhook_id, str(e))
         self._event_id      = None

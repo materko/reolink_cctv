@@ -4,8 +4,6 @@ import asyncio
 import logging
 from datetime import timedelta
 
-import async_timeout
-
 from homeassistant.config_entries               import ConfigEntry
 from homeassistant.core                         import HomeAssistant, Event
 from homeassistant.exceptions                   import ConfigEntryNotReady
@@ -96,14 +94,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     async def async_device_config_update():
         """Perform the update of the host config-state cache, and renew the ONVIF-subscription."""
-        async with async_timeout.timeout(host.api.timeout):
+        async with asyncio.timeout(host.api.timeout):
             await host.renew()
-        async with async_timeout.timeout(host.api.timeout):
+        async with asyncio.timeout(host.api.timeout):
             await host.update_states() # Login session is implicitly updated here, so no need to explicitly do it in a timer
 
     coordinator_device_config_update = DataUpdateCoordinator(
         hass,
         _LOGGER,
+        config_entry = entry,
         name = "reolink.{}".format(host.api.nvr_name),
         update_method = async_device_config_update,
         update_interval = DEVICE_UPDATE_INTERVAL
@@ -118,13 +117,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.info("WATCHDOG: No active subscription for host %s:%s. Force-refreshing motion states...", host.api.host, host.api.port)
             for c in host.api.channels:
                 if c in host.sensor_motion_detection and host.sensor_motion_detection[c] is not None:
-                    async with async_timeout.timeout(host.api.timeout):
-                        host.sensor_motion_detection[c].handle_event(Event(host.event_id, {MOTION_WATCHDOG_TYPE: True}))
+                    async with asyncio.timeout(host.api.timeout):
+                        await host.sensor_motion_detection[c].handle_event(Event(host.event_id, {MOTION_WATCHDOG_TYPE: True}))
             #hass.bus.async_fire(host.event_id, {MOTION_WATCHDOG_TYPE: True})
 
     coordinator_subscription_watchdog = DataUpdateCoordinator(
         hass,
         _LOGGER,
+        config_entry = entry,
         name = "reolink.{}.watchdog".format(host.api.nvr_name),
         update_method = async_subscription_watchdog,
         update_interval = timedelta(seconds = host.subscription_watchdog_interval),
@@ -137,8 +137,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][entry.entry_id][DEVICE_CONFIG_UPDATE_COORDINATOR]     = coordinator_device_config_update
     hass.data[DOMAIN][entry.entry_id][SUBSCRIPTION_WATCHDOG_COORDINATOR]    = coordinator_subscription_watchdog
 
-    for component in PLATFORMS:
-        hass.async_create_task(hass.config_entries.async_forward_entry_setup(entry, component))
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, host.stop)
 
@@ -203,14 +202,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     await host.stop()
 
-    unload_ok = all(
-        await asyncio.gather(
-            *[
-                hass.config_entries.async_forward_entry_unload(entry, component)
-                for component in PLATFORMS
-            ]
-        )
-    )
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)
 

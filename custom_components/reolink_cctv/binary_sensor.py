@@ -3,11 +3,11 @@ import datetime
 import logging
 
 from homeassistant.core                     import HomeAssistant, Event
-from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.components.binary_sensor import BinarySensorEntity, BinarySensorDeviceClass
 from homeassistant.helpers.event            import async_track_point_in_utc_time
 from homeassistant.util                     import dt
 
-from reolink_ip.api import (
+from .reolink_ip.api import (
     MOTION_DETECTION_TYPE,
     FACE_DETECTION_TYPE,
     PERSON_DETECTION_TYPE,
@@ -27,7 +27,7 @@ from .const  import (
 
 _LOGGER = logging.getLogger(__name__)
 
-DEFAULT_DEVICE_CLASS = MOTION_DETECTION_TYPE
+DEFAULT_DEVICE_CLASS = BinarySensorDeviceClass.MOTION
 
 
 ##########################################################################################################################################################
@@ -474,7 +474,7 @@ class VisitorSensor(ReolinkCoordinatorEntity, ReolinkBinarySensorEntity):
 
     @property
     def device_class(self):
-        return VISITOR_DETECTION_TYPE
+        return BinarySensorDeviceClass.OCCUPANCY
 
 
     @property

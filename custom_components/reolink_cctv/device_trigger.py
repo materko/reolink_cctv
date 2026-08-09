@@ -5,11 +5,10 @@ import  voluptuous  as vol
 from    typing      import  cast
 
 from homeassistant.core                                 import HomeAssistant
-from homeassistant.components.automation                import AutomationActionType             #deprecated in 2022.9
-#from homeassistant.helpers.trigger                      import TriggerActionType, TriggerInfo  #since 2022.9
+from homeassistant.helpers.trigger                      import TriggerActionType, TriggerInfo
 from homeassistant.components.device_automation         import DEVICE_TRIGGER_BASE_SCHEMA
 from homeassistant.components.homeassistant.triggers    import state                as state_trigger
-from homeassistant.components.sensor                    import DOMAIN               as SENSOR_DOMAIN
+from homeassistant.components.sensor                    import DOMAIN               as SENSOR_DOMAIN, SensorDeviceClass
 from homeassistant.helpers                              import config_validation    as cv
 from homeassistant.helpers.typing                       import ConfigType
 from homeassistant.helpers.entity_component             import EntityComponent
@@ -20,7 +19,6 @@ from homeassistant.const                                import (
     CONF_PLATFORM,
     CONF_TYPE,
     CONF_NAME,
-    DEVICE_CLASS_TIMESTAMP,
 )
 
 from .sensor    import LastRecordSensor
@@ -55,7 +53,7 @@ async def async_get_triggers(hass: HomeAssistant, device_id: str):
     sensor_component: EntityComponent = hass.data[SENSOR_DOMAIN]
 
     for entry in device_entries:
-        if entry.domain != SENSOR_DOMAIN or entry.original_device_class != DEVICE_CLASS_TIMESTAMP:
+        if entry.domain != SENSOR_DOMAIN or entry.original_device_class != SensorDeviceClass.TIMESTAMP:
             continue
 
         sensor = cast(LastRecordSensor, sensor_component.get_entity(entry.entity_id))
@@ -80,8 +78,8 @@ async def async_get_triggers(hass: HomeAssistant, device_id: str):
 async def async_attach_trigger(
     hass: HomeAssistant,
     config: ConfigType,
-    action: AutomationActionType,   #TriggerActionType          #since 2022.9
-    automation_info: dict,          #trigger_info: TriggerInfo  #since 2022.9
+    action: TriggerActionType,
+    automation_info: TriggerInfo,
 ):
     """ Attach a trigger """
 

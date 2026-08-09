@@ -6,7 +6,7 @@ import  voluptuous  as vol
 
 from homeassistant.core                     import HomeAssistant, callback
 from homeassistant.helpers                  import condition, config_validation as cv
-from homeassistant.components.sensor        import DOMAIN                       as SENSOR_DOMAIN
+from homeassistant.components.sensor        import DOMAIN                       as SENSOR_DOMAIN, SensorDeviceClass
 from homeassistant.helpers.typing           import ConfigType, TemplateVarsType
 from homeassistant.helpers.entity_component import EntityComponent
 from homeassistant.const                    import (
@@ -17,7 +17,6 @@ from homeassistant.const                    import (
     CONF_FOR,
     CONF_TYPE,
     CONF_NAME,
-    DEVICE_CLASS_TIMESTAMP,
 )
 
 from .sensor    import LastRecordSensor
@@ -55,7 +54,7 @@ async def async_get_conditions(hass: HomeAssistant, device_id: str):
     sensor_component: EntityComponent = hass.data[SENSOR_DOMAIN]
 
     for entry in device_entries:
-        if entry.domain != SENSOR_DOMAIN or entry.original_device_class != DEVICE_CLASS_TIMESTAMP:
+        if entry.domain != SENSOR_DOMAIN or entry.original_device_class != SensorDeviceClass.TIMESTAMP:
             continue
 
         sensor = cast(LastRecordSensor, sensor_component.get_entity(entry.entity_id))

@@ -5,7 +5,8 @@ from   typing import Optional
 
 from homeassistant.core                 import HomeAssistant
 from homeassistant.components.switch    import SwitchDeviceClass
-from homeassistant.helpers.entity       import ToggleEntity, EntityCategory
+from homeassistant.const                import EntityCategory
+from homeassistant.helpers.entity       import ToggleEntity
 
 from .host      import ReolinkHost
 from .const     import HOST, DOMAIN

@@ -7,8 +7,7 @@ from typing     import Union
 import voluptuous as vol
 
 from homeassistant.core                 import HomeAssistant
-from homeassistant.components.camera    import SUPPORT_STREAM, Camera
-from homeassistant.components.ffmpeg    import DATA_FFMPEG
+from homeassistant.components.camera    import Camera, CameraEntityFeature
 from homeassistant.helpers              import config_validation as cv, entity_platform
 
 from .const import (
@@ -37,7 +36,7 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_entry(hass: HomeAssistant, config_entry, async_add_devices):
     """Set up a Reolink IP Camera."""
 
-    platform = entity_platform.current_platform.get()
+    platform = entity_platform.async_get_current_platform()
     platform.async_register_entity_service(
         SERVICE_SET_SENSITIVITY,
         {
@@ -113,7 +112,6 @@ class ReolinkCamera(ReolinkCoordinatorEntity, Camera):
 
         self._channel   = channel
         self._stream    = stream
-        self._ffmpeg    = self._hass.data[DATA_FFMPEG]
 
         self._attr_name                             = f"{self._host.api.camera_name(self._channel)} {self._stream}"
         self._attr_unique_id                        = f"reolink_camera_{self._host.unique_id}_{self._channel}_{self._stream}"
@@ -199,12 +197,12 @@ class ReolinkCamera(ReolinkCoordinatorEntity, Camera):
 
 
     @property
-    def supported_features(self):
-        features = SUPPORT_STREAM
+    def supported_features(self) -> CameraEntityFeature:
+        features = CameraEntityFeature.STREAM
         if self.ptz_supported:
-            features += SUPPORT_PTZ
+            features |= CameraEntityFeature(SUPPORT_PTZ)
         if self.playback_support:
-            features += SUPPORT_PLAYBACK
+            features |= CameraEntityFeature(SUPPORT_PLAYBACK)
         return features
     #endof supported_features()
 

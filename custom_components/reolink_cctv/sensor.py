@@ -11,10 +11,10 @@ from homeassistant.components.camera    import ATTR_FILENAME, DOMAIN as CAMERA_D
 import  homeassistant.util.dt           as dt_utils
 from    homeassistant.core              import CALLBACK_TYPE, HomeAssistant
 from    homeassistant.config_entries    import ConfigEntry
-from    homeassistant.components.sensor import DEVICE_CLASS_TIMESTAMP, SensorEntity
+from    homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from    homeassistant.const             import ATTR_ENTITY_ID
 
-from reolink_ip.api import MOTION_DETECTION_TYPE
+from .reolink_ip.api import MOTION_DETECTION_TYPE
 
 from .entity    import ReolinkCoordinatorEntity
 from .host      import ReolinkHost, searchtime_to_datetime
@@ -87,23 +87,19 @@ class LastRecordSensor(ReolinkCoordinatorEntity, SensorEntity):
 
     @property
     def device_class(self):
-        return DEVICE_CLASS_TIMESTAMP
+        return SensorDeviceClass.TIMESTAMP
 
     @property
-    def state(self):
+    def native_value(self):
         if not self._state:
             return None
 
-        date = (
+        return (
             self._attrs.last_record.start
             if self._attrs.last_record and self._attrs.last_record.start
             else None
         )
-        if not date:
-            return None
-
-        return date.isoformat()
-    #endof state()
+    #endof native_value()
 
     @property
     def icon(self):
@@ -158,14 +154,14 @@ class LastRecordSensor(ReolinkCoordinatorEntity, SensorEntity):
     async def request_refresh(self):
         """ Force an update of the sensor """
         await super().request_refresh()
-        self._hass.async_add_job(self._update_last_record)
+        self.hass.async_create_task(self._update_last_record())
     #endof request_refresh()
 
 
     async def async_update(self):
         """ Polling update """
         await super().async_update()
-        self._hass.async_add_job(self._update_last_record)
+        self.hass.async_create_task(self._update_last_record())
     #endof async_update()
 
 
@@ -265,6 +261,6 @@ class LastRecordSensor(ReolinkCoordinatorEntity, SensorEntity):
         """Handle incoming event for VoD update"""
         if (MOTION_DETECTION_TYPE not in event.data or not event.data[MOTION_DETECTION_TYPE]) and (MOTION_COMMON_TYPE not in event.data or not event.data[MOTION_COMMON_TYPE]):
             return
-        await self._hass.async_add_job(self._update_last_record)
+        await self._update_last_record()
     #endof handle_event()
 #endof class LastRecordSensor

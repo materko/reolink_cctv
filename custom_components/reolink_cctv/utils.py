@@ -2,7 +2,7 @@
 
 from typing                                 import Union
 from homeassistant.core                     import HomeAssistant
-from homeassistant.helpers                  import entity_registry
+from homeassistant.helpers                  import device_registry, entity_registry
 from homeassistant.helpers.device_registry  import DeviceEntry, DeviceRegistry
 
 
@@ -11,8 +11,8 @@ async def async_get_device_entries(hass: HomeAssistant, device: Union[str, Devic
 
     registry = entity_registry.async_get(hass)
     if isinstance(device, str):
-        device_registry: DeviceRegistry = hass.helpers.device_registry.async_get(hass)
-        device_entry = device_registry.async_get(device)
+        dev_registry: DeviceRegistry = device_registry.async_get(hass)
+        device_entry = dev_registry.async_get(device)
     else:
         device_entry = device
 

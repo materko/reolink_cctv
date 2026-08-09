@@ -18,6 +18,8 @@ from homeassistant.core                             import HomeAssistant, callba
 from homeassistant.helpers.event                    import async_call_later
 from homeassistant.components.http                  import HomeAssistantView
 from homeassistant.components.stream                import create_stream
+from homeassistant.components.camera                import DynamicStreamSettings
+from homeassistant.components.camera.const          import DATA_CAMERA_PREFS
 from homeassistant.components.media_player.errors   import BrowseError
 from homeassistant.components.media_source.const    import MEDIA_MIME_TYPES
 from homeassistant.components.media_source.error    import MediaSourceError, Unresolvable
@@ -27,11 +29,7 @@ from homeassistant.components.media_source.models   import (
     MediaSourceItem,
     PlayMedia,
 )
-from homeassistant.components.media_player.const    import (
-    MEDIA_CLASS_DIRECTORY,
-    MEDIA_CLASS_VIDEO,
-    MEDIA_TYPE_VIDEO,
-)
+from homeassistant.components.media_player          import MediaClass, MediaType
 
 # from . import typings
 from .host  import ReolinkHost, searchtime_to_datetime
@@ -124,17 +122,21 @@ class ReolinkMediaSource(MediaSource):
 
         mime_type, url = await host.api.get_vod_source(int(camera_id), file)
 
+        stream_prefs: DynamicStreamSettings = None
         try:
-            from homeassistant.components.camera import DynamicStreamSettings
-            from homeassistant.components.camera import CameraPreferences
-            from homeassistant.components.camera import DATA_CAMERA_PREFS
-            prefs: CameraPreferences = self.hass.data[DATA_CAMERA_PREFS]
-            stream_prefs: DynamicStreamSettings = await prefs.get_dynamic_stream_settings(host.cameras[int(camera_id)].entity_id)
-            stream = create_stream(self.hass, url, {}, dynamic_stream_settings = stream_prefs)
-        except ImportError: #ModuleNotFoundError:
-            stream = create_stream(self.hass, url, {})
+            prefs = self.hass.data.get(DATA_CAMERA_PREFS)
+            camera = host.cameras.get(int(camera_id))
+            if prefs is not None and camera is not None and camera.entity_id:
+                stream_prefs = await prefs.get_dynamic_stream_settings(camera.entity_id)
+        except Exception as e:
+            _LOGGER.debug("Could not obtain dynamic stream settings, using defaults: %s", str(e))
+        if stream_prefs is None:
+            stream_prefs = DynamicStreamSettings()
+
+        stream = create_stream(self.hass, url, {}, dynamic_stream_settings = stream_prefs)
 
         stream.add_provider(HLS_PROVIDER, timeout = 3600)
+        await stream.start()
         url: str = stream.endpoint_url(HLS_PROVIDER)
         # #HACK: The media browser seems to have a problem with the master_playlist (it does not load the referenced playlist)
         # so we will just force the reference playlist instead, this seems to work though technically wrong
@@ -208,19 +210,19 @@ class ReolinkMediaSource(MediaSource):
                     path = source + "/"
 
             media_class = (
-                MEDIA_CLASS_DIRECTORY
+                MediaClass.DIRECTORY
                 if not event_id or "/" in event_id
-                else MEDIA_CLASS_VIDEO
+                else MediaClass.VIDEO
             )
 
             media = BrowseMediaSource(
                 domain              = self.domain,
                 identifier          = path,
                 media_class         = media_class,
-                media_content_type  = MEDIA_TYPE_VIDEO,
+                media_content_type  = MediaType.VIDEO,
                 title               = title,
-                can_play            = not bool(media_class == MEDIA_CLASS_DIRECTORY),
-                can_expand          = bool(media_class == MEDIA_CLASS_DIRECTORY),
+                can_play            = not bool(media_class == MediaClass.DIRECTORY),
+                can_expand          = bool(media_class == MediaClass.DIRECTORY),
             )
 
             if thumbnail:

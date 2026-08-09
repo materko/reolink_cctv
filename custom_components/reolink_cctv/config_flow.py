@@ -14,7 +14,7 @@ from homeassistant.const            import (
     CONF_USERNAME,
 )
 
-from reolink_ip.exceptions import CredentialsInvalidError, ApiError
+from .reolink_ip.exceptions import CredentialsInvalidError, ApiError
 
 from .host import ReolinkHost
 from .const import (
@@ -51,7 +51,7 @@ class ReolinkFlowHandler(config_entries.ConfigFlow, domain = DOMAIN):
 
     VERSION = 1
 
-    unique_id           = None
+    device_unique_id    = None
     host_name           = None
     port                = None
     use_https           = None
@@ -59,7 +59,7 @@ class ReolinkFlowHandler(config_entries.ConfigFlow, domain = DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(config_entry):
-        return ReolinkOptionsFlowHandler(config_entry)
+        return ReolinkOptionsFlowHandler()
 
 
     async def async_step_user(self, user_input = None):
@@ -72,7 +72,7 @@ class ReolinkFlowHandler(config_entries.ConfigFlow, domain = DOMAIN):
             try:
                 await self.async_obtain_host_settings(self.hass, user_input)
 
-                await self.async_set_unique_id(self.unique_id)
+                await self.async_set_unique_id(self.device_unique_id)
                 self._abort_if_unique_id_configured()
 
                 user_input[CONF_PORT]       = self.port
@@ -117,10 +117,10 @@ class ReolinkFlowHandler(config_entries.ConfigFlow, domain = DOMAIN):
             if not await host.init():
                 _LOGGER.error(f"Error while performing initial setup of {host.api._host}:{host.api._port}: failed to obtain data from device.")
                 raise CannotConnect
-            self.host_name      = host.api.nvr_name
-            self.unique_id      = host.unique_id
-            self.port           = host.api.port
-            self.use_https      = host.api.use_https
+            self.host_name          = host.api.nvr_name
+            self.device_unique_id   = host.unique_id
+            self.port               = host.api.port
+            self.use_https          = host.api.use_https
         except Exception as e:
             err = str(e)
             if err:
@@ -143,10 +143,6 @@ class ReolinkFlowHandler(config_entries.ConfigFlow, domain = DOMAIN):
 ##########################################################################################################################################################
 class ReolinkOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle Reolink options."""
-
-    def __init__(self, config_entry):
-        self.config_entry = config_entry
-
 
     async def async_step_init(self, user_input = None):
         """Manage the Reolink options."""
