@@ -7,10 +7,23 @@
 
 <p align="center">
   <a href="https://github.com/custom-components/hacs"><img src="https://img.shields.io/badge/HACS-Custom-orange.svg"></a>
-  <img src="https://img.shields.io/github/v/release/JimStar/reolink_cctv?display_name=tag&include_prereleases&sort=semver" alt="Current version">
+  <img src="https://img.shields.io/github/v/release/materko/reolink_cctv?display_name=tag&include_prereleases&sort=semver" alt="Current version">
 </p>
 
 The `reolink_cctv` implementation allows you to integrate your [Reolink](https://www.reolink.com/) devices (NVR/cameras) in Home Assistant.
+
+## Why this fork exists: NVR firmware 2.x
+
+The official Home Assistant `reolink` integration requires reasonably recent device firmware — its documentation simply says to update the device first. For NVRs that never received a newer firmware (verified here on an **RLN8-410-E running 2.0.0.269**, for which Reolink has released nothing newer) that is not an option, and the official integration cannot list or play the NVR's recordings at all.
+
+This fork supports those devices. The firmware-2.x specifics it works around, all verified against a real device:
+
+- **`Search` fails across a month boundary.** Any VOD search whose start and end fall into different calendar months is answered with `rspCode -12` ("get config failed"), so searches are split per month and the results merged. The official stack trips over exactly this: to save requests it deliberately queries a range spanning two months.
+- **`GetDevInfo` has no `exactType` field**, only `type`, so NVR detection has to accept both. (Upstream `reolink_aio` handles this too.)
+- **Recordings play only over raw RTMP.** The `/flv?...playback.bcs` wrapper returns 404 and the `Playback` CGI command answers "not support"; the device's own web UI uses `rtmp://<host>:1935/bcs/playback.bcs?channel=..&type=..&start=<YYYYMMDDHHMMSS>&seek=0&token=..`, where `start` comes from the `PlaybackTime` field of the `Search` result.
+- **RTMP accepts token authentication only.** User/password RTMP URLs fail with an I/O error, for live streams as well as for playback.
+
+Because the upstream `reolink-ip` package is abandoned (its repository is gone and it declared dependencies that no longer install), the library is bundled inside this integration under `custom_components/reolink_cctv/reolink_ip/` and patched there.
 
 ## Most important changes/improvements
 
@@ -76,7 +89,7 @@ I have no desire nor time to argue with them, so it is how it is. This component
 
 ```bash
 # Download a copy of this repository
-$ wget https://github.com/JimStar/reolink_cctv/archive/master.tar.gz
+$ wget https://github.com/materko/reolink_cctv/archive/master.tar.gz
 
 # Unzip the archive
 $ tar -xzf master.tar.gz
@@ -95,7 +108,7 @@ rm -f ./master.tar.gz
   2. Click on **Integrations**
   3. Click the top right menu (the three dots)
   4. Select **Custom repositories**
-  5. Paste the repository URL (`https://github.com/JimStar/reolink_cctv`) in the dialog box
+  5. Paste the repository URL (`https://github.com/materko/reolink_cctv`) in the dialog box
   6. Select category **Integration**
   7. Click **Add**
   8. Click **Install** on the **Reolink IP NVR/camera** box that has now appeared
