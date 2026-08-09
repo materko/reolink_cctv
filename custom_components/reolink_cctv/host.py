@@ -45,7 +45,6 @@ from .const import (
     CONF_PROTOCOL,
     CONF_STREAM,
     CONF_SUBSCRIPTION_WATCHDOG_INTERVAL,
-    DEFAULT_CHANNELS,
     DEFAULT_MOTION_OFF_DELAY,
     DEFAULT_MOTION_FORCE_OFF,
     DEFAULT_PROTOCOL,
@@ -260,40 +259,9 @@ class ReolinkHost:
     #endof get_iohttp_session()
 
 
-    #TODO: USELESS so far, because Reolink has not means to get a shot from a specific time of a recording.
-    #      Thus all these thumbnails will be THE SAME current-time shots, which are nothing to do with a specific recording.
-    '''
-    async def store_vod_thumbnails(self, channel: int, start: Optional[dt.datetime] = None, end: Optional[dt.datetime] = None):
-        """ Run search and store VoD thumbnails """
-
-        current_time = dt_util.now()
-        if end is None:
-            end = current_time
-        if start is None:
-            start = dt.datetime.combine(end.date(), dt.time.min)
-            if self.playback_days > 0:
-                start -= relativedelta(days = int(self.playback_days))
-
-        directory = os.path.join(self.thumbnail_path, f"{channel}")
-
-        _, files = await self._api.request_vod_files(start, end)
-        for file in files:
-            start       = searchtime_to_datetime(file["StartTime"], end.tzinfo)
-            event_id    = str(start.timestamp())
-
-            thumbnail = os.path.join(directory, f"{event_id}.{THUMBNAIL_EXTENSION}")
-            if not os.path.isfile(thumbnail):
-                if not os.path.isdir(directory):
-                    os.makedirs(directory)
-                if channel in self.cameras:
-                    service_data = {
-                        ATTR_ENTITY_ID: self.cameras[channel].entity_id,
-                        ATTR_FILENAME: thumbnail,
-                    }
-                    await self._hass.services.async_call(CAMERA_DOMAIN, SERVICE_SNAPSHOT, service_data, blocking = False)
-    #endof store_vod_thumbnails()
-    '''
-
+    # Note: thumbnails cannot be generated in bulk for existing recordings. Reolink offers no way to grab a frame from a
+    # specific moment of a recording, so every such thumbnail would just be an identical current-time snapshot.
+    # Thumbnails are therefore only written for the newest recording, by the last-record sensor, as the event happens.
 
     async def cleanup_vod_thumbnails(self, channel: int):
         """ Cleanup older thumbnail files """

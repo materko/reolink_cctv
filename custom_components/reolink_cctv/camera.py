@@ -228,18 +228,6 @@ class ReolinkCamera(ReolinkCoordinatorEntity, Camera):
     #endof ptz_control()
 
 
-    #TODO: USELESS so far, because Reolink has not means to get a shot from a specific time of a recording.
-    #      Thus all these thumbnails will be THE SAME current-time shots, which are nothing to do with a specific recording.
-    async def commit_thumbnails(self, **kwargs):
-        """ Query camera for VoDs and emit results """
-        if not self.playback_support:
-            _LOGGER.error("Video Playback is not supported on %s camera.", self.name)
-            return
-
-        await self._host.store_vod_thumbnails(self._channel, **kwargs)
-    #endof commit_thumbnails()
-
-
     async def cleanup_thumbnails(self, **kwargs):
         """ Clear camera VoDs older than the date """
         if not self.playback_support:

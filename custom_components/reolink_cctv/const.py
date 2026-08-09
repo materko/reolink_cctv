@@ -2,13 +2,11 @@
 
 DOMAIN                                  = "reolink_cctv"
 DOMAIN_DATA                             = "reolink_cctv_devices"
-EVENT_DATA_RECEIVED                     = "reolink_cctv-event"
 DEVICE_CONFIG_UPDATE_COORDINATOR        = "coordinator"
 SUBSCRIPTION_WATCHDOG_COORDINATOR       = "subscription_watchdog_coordinator"
 HOST                                    = "host"
 SESSION_RENEW_THRESHOLD                 = 300
 MEDIA_SOURCE                            = "media_source"
-THUMBNAIL_VIEW                          = "thumbnail_view"
 SHORT_TOKENS                            = "short_tokens"
 LONG_TOKENS                             = "long_tokens"
 LAST_RECORD                             = "last_record"
@@ -26,7 +24,6 @@ CONF_SUBSCRIPTION_WATCHDOG_INTERVAL     = "subscription_watchdog_interval"
 
 DEFAULT_EXTERNAL_HOST                   = ""
 DEFAULT_EXTERNAL_PORT                   = ""
-DEFAULT_CHANNELS                        = [0]
 DEFAULT_MOTION_OFF_DELAY                = 5
 DEFAULT_MOTION_FORCE_OFF                = 0
 DEFAULT_PROTOCOL                        = "rtmp"
@@ -35,7 +32,6 @@ DEFAULT_SUBSCRIPTION_WATCHDOG_INTERVAL  = 60
 
 DEFAULT_TIMEOUT                         = 60
 DEFAULT_PLAYBACK_DAYS                   = 10
-DEFAULT_THUMBNAIL_OFFSET                = 6
 
 SUPPORT_PTZ                             = 1024
 SUPPORT_PLAYBACK                        = 2048
@@ -45,7 +41,6 @@ SERVICE_SET_BACKLIGHT                   = "set_backlight"
 SERVICE_SET_DAYNIGHT                    = "set_daynight"
 SERVICE_SET_SENSITIVITY                 = "set_sensitivity"
 
-SERVICE_COMMIT_THUMBNAILS               = "commit_thumbnails"
 SERVICE_CLEANUP_THUMBNAILS              = "cleanup_thumbnails"
 
 THUMBNAIL_EXTENSION                     = "jpg"
