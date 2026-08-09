@@ -1144,19 +1144,26 @@ class Host:
     #endof get_snapshot()
 
 
+    def _is_fw2_nvr(self) -> bool:
+        """Whether the host is an NVR running firmware 2.x (needs token-based RTMP auth and has no /flv nor Playback-CGI endpoints)."""
+        return self._is_nvr and self._nvr_sw_version_object is not None and not self._nvr_sw_version_object.is_unknown and self._nvr_sw_version_object.major < 3
+    #endof _is_fw2_nvr()
+
+
     def get_rtmp_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
         if channel not in self._channels:
             return None
 
         if stream is None:
             stream = self._stream
-            
+
         stream_type = None
         if stream == "sub":
             stream_type = 1
         else:
             stream_type = 0
-        if self._rtmp_auth_method == DEFAULT_RTMP_AUTH_METHOD:
+        # Firmware 2.x NVRs reject user/password RTMP auth (I/O error) - their own web UI always authenticates RTMP by token.
+        if self._rtmp_auth_method == DEFAULT_RTMP_AUTH_METHOD and not self._is_fw2_nvr():
             password = parse.quote(self._password)
             return f"rtmp://{self._host}:{self._rtmp_port}/bcs/channel{channel}_{stream}.bcs?channel={channel}&stream={stream_type}&user={self._username}&password={password}"
 
@@ -1218,16 +1225,27 @@ class Host:
             host_port = self._port
 
         if self._is_nvr:
-            scheme = "https" if self._use_https else "http"
-            # Firmware 2.x NVRs have no "/flv" endpoint (it returns 404) - their recordings play through the "Playback" CGI command,
-            # with "source" being the start-time string built from the Search result's "PlaybackTime" (e.g. RLN8-410-E fw 2.0.0.269).
-            if self._nvr_sw_version_object is not None and not self._nvr_sw_version_object.is_unknown and self._nvr_sw_version_object.major < 3:
-                return "application/x-mpegURL", f"{scheme}://{host_url}:{host_port}/cgi-bin/api.cgi?&cmd=Playback&channel={channel}&source={filename}&user={self._username}&password={self._password}"
+            # Firmware 2.x NVRs have no "/flv" endpoint (404) and no "Playback" CGI command ("not support") - their own web UI
+            # plays recordings over raw RTMP with token auth: rtmp://host:1935/bcs/playback.bcs?channel=..&type=..&start=<YYYYMMDDHHMMSS from
+            # the Search result's "PlaybackTime">&seek=0&token=.. (verified on RLN8-410-E fw 2.0.0.269). Stream-type: main=0, sub=1, ext=2.
+            if self._is_fw2_nvr():
+                if stream is None:
+                    stream = self._stream
+                if stream == "sub":
+                    playback_type = 1
+                elif stream == "ext":
+                    playback_type = 2
+                else:
+                    playback_type = 0
+                return "video/x-flv", f"rtmp://{host_url}:{self._rtmp_port}/bcs/playback.bcs?channel={channel}&type={playback_type}&start={filename}&seek=0&token={self._token}"
             # NVR VoDs "type=0": Adobe flv
             #return "video/x-flv", f"http://{host_url}:{host_port}/flv?port=1935&app=bcs&stream=playback.bcs&channel={channel}&type=0&start={filename}&seek=0&user={self._username}&password={self._password}"
             # NVR VoDs "type=1": mp4
             # return "video/mp4", f"http://{host_url}:{host_port}/flv?port=1935&app=bcs&stream=playback.bcs&channel={channel}&type=1&start={filename}&seek=0&user={self._username}&password={self._password}"
-            return "application/x-mpegURL", f"{scheme}://{host_url}:{host_port}/flv?port=1935&app=bcs&stream=playback.bcs&channel={channel}&type=1&start={filename}&seek=0&user={self._username}&password={self._password}"
+            if self._use_https:
+                return "application/x-mpegURL", f"https://{host_url}:{host_port}/flv?port=1935&app=bcs&stream=playback.bcs&channel={channel}&type=1&start={filename}&seek=0&user={self._username}&password={self._password}"
+            else:
+                return "application/x-mpegURL", f"http://{host_url}:{host_port}/flv?port=1935&app=bcs&stream=playback.bcs&channel={channel}&type=1&start={filename}&seek=0&user={self._username}&password={self._password}"
         else:
             if external_url:
                 if self._use_https:
