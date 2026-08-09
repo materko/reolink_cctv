@@ -1218,14 +1218,16 @@ class Host:
             host_port = self._port
 
         if self._is_nvr:
+            scheme = "https" if self._use_https else "http"
+            # Firmware 2.x NVRs have no "/flv" endpoint (it returns 404) - their recordings play through the "Playback" CGI command,
+            # with "source" being the start-time string built from the Search result's "PlaybackTime" (e.g. RLN8-410-E fw 2.0.0.269).
+            if self._nvr_sw_version_object is not None and not self._nvr_sw_version_object.is_unknown and self._nvr_sw_version_object.major < 3:
+                return "application/x-mpegURL", f"{scheme}://{host_url}:{host_port}/cgi-bin/api.cgi?&cmd=Playback&channel={channel}&source={filename}&user={self._username}&password={self._password}"
             # NVR VoDs "type=0": Adobe flv
             #return "video/x-flv", f"http://{host_url}:{host_port}/flv?port=1935&app=bcs&stream=playback.bcs&channel={channel}&type=0&start={filename}&seek=0&user={self._username}&password={self._password}"
             # NVR VoDs "type=1": mp4
             # return "video/mp4", f"http://{host_url}:{host_port}/flv?port=1935&app=bcs&stream=playback.bcs&channel={channel}&type=1&start={filename}&seek=0&user={self._username}&password={self._password}"
-            if self._use_https:
-                return "application/x-mpegURL", f"https://{host_url}:{host_port}/flv?port=1935&app=bcs&stream=playback.bcs&channel={channel}&type=1&start={filename}&seek=0&user={self._username}&password={self._password}"
-            else:
-                return "application/x-mpegURL", f"http://{host_url}:{host_port}/flv?port=1935&app=bcs&stream=playback.bcs&channel={channel}&type=1&start={filename}&seek=0&user={self._username}&password={self._password}"
+            return "application/x-mpegURL", f"{scheme}://{host_url}:{host_port}/flv?port=1935&app=bcs&stream=playback.bcs&channel={channel}&type=1&start={filename}&seek=0&user={self._username}&password={self._password}"
         else:
             if external_url:
                 if self._use_https:
