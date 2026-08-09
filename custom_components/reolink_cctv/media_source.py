@@ -120,7 +120,7 @@ class ReolinkMediaSource(MediaSource):
         if not file:
             raise BrowseError("Empty event passed to async_resolve_media().")
 
-        mime_type, url = await host.api.get_vod_source(int(camera_id), file)
+        _, url = await host.api.get_vod_source(int(camera_id), file)
 
         stream_prefs: DynamicStreamSettings = None
         try:
@@ -142,7 +142,9 @@ class ReolinkMediaSource(MediaSource):
         # so we will just force the reference playlist instead, this seems to work though technically wrong
         url = url.replace("master_", "")
 
-        return PlayMedia(url, mime_type)
+        # The device source (RTMP/FLV/...) is always re-wrapped into HLS above, so the played URL is a playlist
+        # regardless of what get_vod_source() reported - announcing the device's own mime-type here would stop the frontend from playing it.
+        return PlayMedia(url, "application/x-mpegURL")
     #endof async_resolve_media()
 
 
