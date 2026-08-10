@@ -4,8 +4,6 @@ ptz_control:
   target:
     entity:
       domain: camera
-    device:
-      integration: None
   fields:
     command:
       name: Command
@@ -54,8 +52,6 @@ set_sensitivity:
   target:
     entity:
       domain: camera
-    device:
-      integration: None
   fields:
     sensitivity:
       name: Sensitivity
@@ -83,8 +79,6 @@ set_daynight:
   target:
     entity:
       domain: camera
-    device:
-      integration: None
   fields:
     mode:
       name: Mode
@@ -113,8 +107,6 @@ set_backlight:
   target:
     entity:
       domain: camera
-    device:
-      integration: None
   fields:
     mode:
       name: Mode
@@ -141,5 +133,3 @@ cleanup_thumbnails:
   target:
     entity:
       domain: camera
-    device:
-      integration: None

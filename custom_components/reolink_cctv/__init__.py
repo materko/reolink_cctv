@@ -7,6 +7,7 @@ from datetime import timedelta
 from homeassistant.config_entries               import ConfigEntry
 from homeassistant.core                         import HomeAssistant, Event
 from homeassistant.exceptions                   import ConfigEntryNotReady
+from homeassistant.helpers                      import config_validation as cv
 from homeassistant.helpers.storage              import STORAGE_DIR
 from homeassistant.helpers.update_coordinator   import DataUpdateCoordinator
 from homeassistant.const import (
@@ -49,6 +50,10 @@ from .const import (
 DEVICE_UPDATE_INTERVAL  = timedelta(minutes = 1)
 PLATFORMS               = ["camera", "switch", "binary_sensor", "sensor"]
 _LOGGER                 = logging.getLogger(__name__)
+
+# Cameras are only ever added through the config flow, so there is nothing to
+# accept from configuration.yaml.
+CONFIG_SCHEMA           = cv.config_entry_only_config_schema(DOMAIN)
 
 
 ##########################################################################################################################################################
